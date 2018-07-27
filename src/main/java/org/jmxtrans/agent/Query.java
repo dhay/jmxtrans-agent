@@ -57,6 +57,13 @@ public class Query implements Collector {
      */
     @Nonnull
     protected List<String> attributes;
+
+    /**
+     * List of attributes to exclude
+     */
+    @Nonnull
+    protected List<String> excludeAttributes;
+
     @Nullable
     protected final String resultAlias;
     /**
@@ -147,7 +154,20 @@ public class Query implements Collector {
         } catch (MalformedObjectNameException e) {
             throw new IllegalArgumentException("Invalid objectName '" + objectName + "'", e);
         }
-        this.attributes = Collections.unmodifiableList(new ArrayList<String>(Preconditions2.checkNotNull(attributes, "attributes")));
+
+        Preconditions2.checkNotNull(attributes, "attributes");
+
+        List<String> exclude = new ArrayList<String>();
+        List<String> include = new ArrayList<String>();
+        for (String attribute : attributes) {
+            if (attribute.startsWith("-")) {
+                exclude.add(attribute.substring(1));
+            } else {
+                include.add(attribute);
+            }
+        }
+        this.attributes = Collections.unmodifiableList(include);
+        this.excludeAttributes = Collections.unmodifiableList(exclude);
         this.key = key;
         this.resultAlias = resultAlias;
         this.position = position;
@@ -176,10 +196,25 @@ public class Query implements Collector {
 
 
     private List<String> resolveAttributes(MBeanServer mbeanServer, ObjectName on) {
+        boolean hasExclusions = !excludeAttributes.isEmpty();
+
+        List<String> resolvedAttributes;
         if (attributes.isEmpty()) {
-            return findAllAttributes(mbeanServer, on);
+            resolvedAttributes = findAllAttributes(mbeanServer, on);
+        } else {
+            // Potentially wrap the attribute list in a new list so we can remove excluded elements
+            resolvedAttributes = hasExclusions ? new ArrayList<String>(attributes) : attributes;
         }
-        return attributes;
+
+        if (hasExclusions) {
+            for (Iterator<String> it = resolvedAttributes.iterator(); it.hasNext(); ) {
+                String attribute =  it.next();
+                if (excludeAttributes.contains(attribute)) {
+                    it.remove();
+                }
+            }
+        }
+        return resolvedAttributes;
     }
 
     private List<String> findAllAttributes(MBeanServer mbeanServer, ObjectName on) {
